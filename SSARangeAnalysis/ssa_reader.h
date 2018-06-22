@@ -1,4 +1,3 @@
-#pragma once
 #ifndef SSA_READER_H
 #define SSA_READER_H
 
@@ -40,6 +39,8 @@ public:
 	bool isMaxRange() const { return MaxRangeLower && MaxRangeUpper; };
 	void setMaxRange(bool low, bool upper) { MaxRangeLower = low; MaxRangeUpper = upper; };
 
+
+
 	Range add(const Range &other) const;
 	Range sub(const Range &other) const;
 	Range mul(const Range &other) const;
@@ -48,8 +49,30 @@ public:
 	Range unionWith(const Range &other) const;
 
 	void Print() const;
+	std::string getString() const;
 };
 
+class BasicInterval {
+public:
+	Range range;
+
+	BasicInterval();
+
+	void setRange(const Range &newRange) {
+		this->range = newRange;
+	}
+
+	std::string getString() const;
+
+};
+
+class SymbolInerval : public BasicInterval{
+public:
+	const Variable * bound;
+	std::string pred;
+
+	SymbolInerval();
+};
 
 
 enum VarType { Int_type, Float_type};
@@ -58,15 +81,20 @@ class Variable
 {
 public:
 	std::string name;
-	Range range;
 	VarType type;
 	bool isConstant{ false };
+	float constantVal = 0;
+
+	Range range;
+
 	Variable();
-	Variable(std::string name, Range range = Range(0, 0));
+	Variable(std::string name);
 	
 	std::string GetTypeString();
 	VarType GetType() { return this->type; }
 	void setType(VarType _type) { this->type = _type; };
+	float getValue() { return constantVal; };
+
 	void ParseDef(std::string variableDefString);
 	void ParseUse(std::string useString);
 };
@@ -80,16 +108,20 @@ class Statement
 {
 public:
 	BasicBlock * parentBlock{NULL};
+
+	BasicInterval *intersect;
 	std::deque<Variable *> params;
 	OperationType operation;
 	std::string compareOpe;
 	std::string functionCalled;
 	Variable * result = NULL;
+
 	std::string trueNextBlockName;
 	std::string falseNextBlockName;
 	int lineNumber{ -1 };
+
 	Statement(int lines, BasicBlock* parent);
-	Statement(OperationType ope, Variable*res, Variable*param1, Variable*param2);
+	Statement(OperationType, Variable*, Variable*, BasicInterval *);
 
 	void Print();
 	bool Parse(std::string statementString);
@@ -97,7 +129,7 @@ public:
 	void SetDefaultNextBlockName(std::string blockName);
 
 	Variable* GetLocalVariable(Variable* var);
-	Range eval();
+	//Range eval();
 };
 
 enum BBNextMethod {DefaultNext, BranchNext, GotoNext};

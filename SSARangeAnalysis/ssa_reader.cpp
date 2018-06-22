@@ -221,16 +221,65 @@ void Range::Print() const
 	}
 }
 
+std::string Range::getString() const
+{
+	std::string ret;
+	if (this->isUnknown())
+	{
+		ret =  "Unknown";
+		return ret;
+	}
+	if (this->isEmpty())
+	{
+		ret =  "Empty";
+		return ret;
+	}
+	if (this->MaxRangeLower)
+	{
+		ret.append("[-inf, ");
+	}
+	else {
+		ret.append("[");
+		ret.append(std::to_string(getLower()));
+		ret.append(", ");
+	}
+	if (this->MaxRangeUpper) {
+		ret.append("+inf]");
+		return ret;
+	}
+	else
+	{
+		ret.append(std::to_string(getUpper()));
+		ret.append("]");
+		return ret;
+	}
+}
+
+BasicInterval::BasicInterval()
+{
+	
+}
+
+std::string BasicInterval::getString() const
+{
+	return range.getString();
+}
+
+SymbolInerval::SymbolInerval()
+{
+	bound = NULL;
+}
+
 Variable::Variable()
-	:type(Float_type)
+	:type(Float_type),name("Unknown Variable")
 {
 #if (defined DEBUG) || (defined DEBUG_VAR)
 	std::cout << "Variable " << "Unknown" << "created !" << std::endl;
 #endif
 }
 
-Variable::Variable(std::string name, Range range)
-	:name(name), range(range),type(Float_type)
+Variable::Variable(std::string name)
+	:name(name),type(Float_type)
 {
 #if (defined DEBUG) || (defined DEBUG_VAR)
 	std::cout << "Variable " << name << "created !" << std::endl;
@@ -261,8 +310,7 @@ void Variable::ParseUse(std::string useString)
 	{
 		this->name = useString;
 		this->isConstant = true;
-		range.setLower(val);
-		range.setUpper(val);
+		constantVal = val;
 	}
 	else
 	{
@@ -293,10 +341,11 @@ Statement::Statement(int lines, BasicBlock*parent)
 
 }
 
-Statement::Statement(OperationType ope, Variable*res, Variable*param1, Variable*param2)
+Statement::Statement(OperationType ope, Variable*res, Variable*param1, BasicInterval* interval)
 {
 	operation = ope;
-	params.push_back(param1); params.push_back(param2);
+	params.push_back(param1);
+	intersect = interval;
 	result = res;
 }
 
@@ -608,6 +657,8 @@ void Statement::Print()
 	case RETURN_OPE:std::cout << "return " << (params.size() == 1 ? params[0]->name : "")<< std::endl; break;
 	case INT_TRANSFORM_OPE:std::cout << result->name << " = (int) " << params[0]->name << std::endl; break;
 	case FLOAT_TRANSFORM_OPE:std::cout << result->name << " = (float) " << params[0]->name << std::endl; break;
+	case INTERSECT_OPE:std::cout << result->name << " = " << params[0]->name <<
+		" Inersect " << intersect->getString()<<std::endl; break;
 	default:std::cout << "Error Print Statement at " <<lineNumber<< std::endl;
 	}
 }
@@ -628,21 +679,21 @@ Variable* Statement::GetLocalVariable(Variable *var)
 }
 
 
-// evaluate the result range of this statement operation
-Range Statement::eval()
-{
-	switch (this->operation)
-	{
-	case PLUS_OPE:return params[0]->range.add(params[1]->range); break;
-	case MINUS_OPE:return params[0]->range.sub(params[1]->range); break;
-	case MULTI_OPE:return params[0]->range.mul(params[1]->range); break;
-	case DIV_OPE:return params[0]->range.div(params[1]->range); break;
-	case EQUAL_OPE:return params[0]->range; break;
-	case PHI_OPE:return params[0]->range.unionWith(params[1]->range); break;
-	case INTERSECT_OPE:return params[0]->range.intersectWith(params[1]->range); break;
-	default:return Range(); break;
-	}
-}
+//// evaluate the result range of this statement operation
+//Range Statement::eval()
+//{
+//	switch (this->operation)
+//	{
+//	case PLUS_OPE:return params[0]->range.add(params[1]->range); break;
+//	case MINUS_OPE:return params[0]->range.sub(params[1]->range); break;
+//	case MULTI_OPE:return params[0]->range.mul(params[1]->range); break;
+//	case DIV_OPE:return params[0]->range.div(params[1]->range); break;
+//	case EQUAL_OPE:return params[0]->range; break;
+//	case PHI_OPE:return params[0]->range.unionWith(params[1]->range); break;
+//	case INTERSECT_OPE:return params[0]->range.intersectWith(params[1]->range); break;
+//	default:return Range(); break;
+//	}
+//}
 
 BasicBlock::BasicBlock(Function* parent)
 	:parentFunction(parent),nextMethod(DefaultNext)
@@ -866,16 +917,17 @@ void Function::Print()
 void Function::convertToeSSA()
 {
 	BasicBlock *currentBlock;
-	currentBlock = bbs["entry"];
-	while (currentBlock != NULL)
+	std::map<std::string, BasicBlock*>::iterator it;
+	for(it = bbs.begin(); it!= bbs.end(); it++)
 	{
+		currentBlock = it->second;
 		if (currentBlock->nextMethod == BranchNext)
 		{
 			// i_1 < j_1
 			if (!currentBlock->lastStatement->params[0]->isConstant &&
 				!currentBlock->lastStatement->params[1]->isConstant)
 			{
-
+				
 			}
 			// i_1 < 0
 			else 
@@ -887,72 +939,72 @@ void Function::convertToeSSA()
 				Variable *varTrue = GetLocalVariable(varTrueName);
 				Variable *varFalse = GetLocalVariable(varFalseName);
 				Variable *oldVar = currentBlock->lastStatement->params[0];
-				Variable *boundTrue = new Variable();
-				Variable *boundFalse = new Variable();
+				BasicInterval *intervalTrue = new BasicInterval();
+				BasicInterval *intervalFalse = new BasicInterval();
 				std::string compareOpe = currentBlock->lastStatement->compareOpe;
-				float constantVal = currentBlock->lastStatement->params[1]->range.getLower();
+				float constantVal = currentBlock->lastStatement->params[1]->getValue();
 				if (compareOpe == "<")
 				{
 					// True branch
-					boundTrue->range.setUpper(constantVal);
-					boundTrue->range.MaxRangeUpper = false;
-					boundTrue->range.MaxRangeLower = true;
+					intervalTrue->range.setUpper(constantVal);
+					intervalTrue->range.MaxRangeUpper = false;
+					intervalTrue->range.MaxRangeLower = true;
 
 					// False branch
-					boundFalse->range.setLower(constantVal);
-					boundFalse->range.MaxRangeLower = false;
-					boundFalse->range.MaxRangeUpper = true;
+					intervalFalse->range.setLower(constantVal);
+					intervalFalse->range.MaxRangeLower = false;
+					intervalFalse->range.MaxRangeUpper = true;
 				}
 				else if (compareOpe == "<=")
 				{
 					// True branch
-					boundTrue->range.setUpper(constantVal);
-					boundTrue->range.MaxRangeLower = true;
-					boundTrue->range.MaxRangeUpper = false;
+					intervalTrue->range.setUpper(constantVal);
+					intervalTrue->range.MaxRangeLower = true;
+					intervalTrue->range.MaxRangeUpper = false;
 
 					// False branch
-					boundFalse->range.setLower(constantVal);
-					boundFalse->range.MaxRangeLower = false;
-					boundTrue->range.MaxRangeUpper = true;
+					intervalFalse->range.setLower(constantVal);
+					intervalFalse->range.MaxRangeLower = false;
+					intervalFalse->range.MaxRangeUpper = true;
 				}
 				else if (compareOpe == ">")
 				{
 					// True branch
-					boundTrue->range.setLower(constantVal);
-					boundTrue->range.MaxRangeUpper = true;
-					boundTrue->range.MaxRangeLower = false;
+					intervalTrue->range.setLower(constantVal);
+					intervalTrue->range.MaxRangeUpper = true;
+					intervalTrue->range.MaxRangeLower = false;
 
 					// False branch
-					boundFalse->range.setUpper(constantVal);
-					boundFalse->range.MaxRangeLower = true;
-					boundFalse->range.MaxRangeUpper = false;
+					intervalFalse->range.setUpper(constantVal);
+					intervalFalse->range.MaxRangeLower = true;
+					intervalFalse->range.MaxRangeUpper = false;
 				}
 				else if (compareOpe == ">=")
 				{
 					// True branch
-					boundTrue->range.setLower(constantVal);
-					boundTrue->range.MaxRangeLower = false;
-					boundTrue->range.MaxRangeUpper = true;
+					intervalTrue->range.setLower(constantVal);
+					intervalTrue->range.MaxRangeLower = false;
+					intervalTrue->range.MaxRangeUpper = true;
 
 					// False branch
-					boundFalse->range.setUpper(constantVal);
-					boundFalse->range.MaxRangeLower = true;
-					boundFalse->range.MaxRangeUpper = false;
+					intervalFalse->range.setUpper(constantVal);
+					intervalFalse->range.MaxRangeLower = true;
+					intervalFalse->range.MaxRangeUpper = false;
 				}
 				else if (compareOpe == "!=")
 				{
 					// True branch
-					boundTrue->range.setLower(constantVal);
-					boundTrue->range.setUpper(constantVal);
-					boundTrue->range.notEqual = true;
-					boundTrue->range.MaxRangeLower = false;
-					boundTrue->range.MaxRangeUpper = false;
+					intervalTrue->range.setLower(constantVal);
+					intervalTrue->range.setUpper(constantVal);
+					intervalTrue->range.notEqual = true;
+					intervalTrue->range.MaxRangeLower = false;
+					intervalTrue->range.MaxRangeUpper = false;
 
 					// False branch
-					boundFalse->range.setLower(constantVal);
-					boundFalse->range.setUpper(constantVal);
-					boundFalse->range.MaxRangeLower = false;
-					boundFalse->range.MaxRangeUpper = false;
+					intervalFalse->range.setLower(constantVal);
+					intervalFalse->range.setUpper(constantVal);
+					intervalFalse->range.MaxRangeLower = false;
+					intervalFalse->range.MaxRangeUpper = false;
 				}
 
 				std::set<std::string> dominatingBlocks = findDom(currentBlock->trueNextBlockName);
@@ -961,14 +1013,14 @@ void Function::convertToeSSA()
 					bbs[domblock]->ReplaceVarUse(oldVar, varTrue);
 				}
 				bbs[currentBlock->trueNextBlockName]->addStatementBefore(
-					new Statement(INTERSECT_OPE, varTrue, oldVar, boundTrue)); 
-				std::set<std::string> dominatingBlocks = findDom(currentBlock->falseNextBlockName);
+					new Statement(INTERSECT_OPE, varTrue, oldVar, intervalTrue)); 
+				dominatingBlocks = findDom(currentBlock->falseNextBlockName);
 				for (std::string domblock : dominatingBlocks)
 				{
 					bbs[domblock]->ReplaceVarUse(oldVar, varFalse);
 				}
 				bbs[currentBlock->falseNextBlockName]->addStatementBefore(
-					new Statement(INTERSECT_OPE, varFalse, oldVar, boundFalse));
+					new Statement(INTERSECT_OPE, varFalse, oldVar, intervalFalse));
 			}
 		}
 	}
