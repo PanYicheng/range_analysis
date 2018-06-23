@@ -9,6 +9,22 @@
 #define MAX_LINE_LENGTH 255
 
 
+std::string reverseCompareOpe(std::string ope)
+{
+	if (ope == "<")
+		return ">=";
+	if (ope == "<=")
+		return ">";
+	if (ope == ">")
+		return "<=";
+	if (ope == ">=")
+		return "<";
+	if (ope == "!=")
+		return "==";
+	if (ope == "==")
+		return "!=";
+	return "Error Input";
+}
 
 // these defines are used to enable debug output during building of the SSA graph
 //#define DEBUG
@@ -33,7 +49,7 @@ void DeleteNonConstantVar(Variable *var)
 }
 
 Range::Range()
-	:lower(-1),upper(1)
+	:lower(-1), upper(1)
 {
 
 }
@@ -41,9 +57,26 @@ Range::Range()
 Range::Range(float lb, float ub, RangeType rtype)
 	: lower(lb), upper(ub), type(rtype)
 {
-	if (lb > ub) 
+	if (lb > ub)
 	{
 		type = Empty;
+	}
+}
+
+bool Range::checkValid() const
+{
+	if (type != Regular)
+		return true;
+	else
+	{
+		if (!MaxRangeLower && !MaxRangeUpper)
+		{
+			if (lower > upper)
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 }
 
@@ -122,7 +155,7 @@ Range Range::div(const Range&other) const
 	float c = other.getLower();
 	float d = other.getUpper();
 	// Divide 0 will produce Max Range
-	if (c <= 0 && d >=0)
+	if (c <= 0 && d >= 0)
 	{
 		Range temp(-1, 1);
 		temp.setMaxRange(true, true);
@@ -167,7 +200,7 @@ Range Range::intersectWith(const Range&other) const
 	}
 	float l = getLower() > other.getLower() ? getLower() : other.getLower();
 	float u = getUpper() < other.getUpper() ? getUpper() : other.getUpper();
-	return Range(l,u);
+	return Range(l, u);
 }
 
 Range Range::unionWith(const Range&other) const
@@ -190,7 +223,7 @@ Range Range::unionWith(const Range&other) const
 	}
 	float l = getLower() < other.getLower() ? getLower() : other.getLower();
 	float u = getUpper() > other.getUpper() ? getUpper() : other.getUpper();
-	return Range(l,u);
+	return Range(l, u);
 }
 
 void Range::Print() const
@@ -226,12 +259,19 @@ std::string Range::getString() const
 	std::string ret;
 	if (this->isUnknown())
 	{
-		ret =  "Unknown";
+		ret = "Unknown";
 		return ret;
 	}
 	if (this->isEmpty())
 	{
-		ret =  "Empty";
+		ret = "Empty";
+		return ret;
+	}
+	if (this->notEqual)
+	{
+		ret.append("[ !=");
+		ret.append(std::to_string(lower));
+		ret.append(" ]");
 		return ret;
 	}
 	if (this->MaxRangeLower)
@@ -257,21 +297,75 @@ std::string Range::getString() const
 
 BasicInterval::BasicInterval()
 {
-	
+
 }
 
-std::string BasicInterval::getString() const
+std::string BasicInterval::getString()
 {
 	return range.getString();
 }
 
-SymbolInerval::SymbolInerval()
+void BasicInterval::Print()
+{
+	std::cout << getString();
+}
+
+SymbolInterval::SymbolInterval()
 {
 	bound = NULL;
 }
 
+SymbolInterval::~SymbolInterval() = default;
+
+std::string SymbolInterval::getString()
+{
+	std::string ret;
+	if (compareOpe == "<")
+	{
+		ret.append("(-inf, ft(");
+		ret.append(bound->name);
+		ret.append(") )");
+	}
+	if (compareOpe == "<=")
+	{
+		ret.append("(-inf, ft(");
+		ret.append(bound->name);
+		ret.append(") ]");
+	}
+	if (compareOpe == ">")
+	{
+		ret.append("( ft(");
+		ret.append(bound->name);
+		ret.append(") ,inf)");
+	}
+	if (compareOpe == ">=")
+	{
+		ret.append("[ ft(");
+		ret.append(bound->name);
+		ret.append(") ,inf)");
+	}
+	if (compareOpe == "!=")
+	{
+		ret.append("[ != ft(");
+		ret.append(bound->name);
+		ret.append(") ]");
+	}
+	if (compareOpe == "==")
+	{
+		ret.append("[ == ft(");
+		ret.append(bound->name);
+		ret.append(") ]");
+	}
+	return ret;
+}
+
+void SymbolInterval::Print()
+{
+	std::cout << getString();
+}
+
 Variable::Variable()
-	:type(Float_type),name("Unknown Variable")
+	:type(Float_type), name("Unknown Variable")
 {
 #if (defined DEBUG) || (defined DEBUG_VAR)
 	std::cout << "Variable " << "Unknown" << "created !" << std::endl;
@@ -279,7 +373,7 @@ Variable::Variable()
 }
 
 Variable::Variable(std::string name)
-	:name(name),type(Float_type)
+	:name(name), type(Float_type)
 {
 #if (defined DEBUG) || (defined DEBUG_VAR)
 	std::cout << "Variable " << name << "created !" << std::endl;
@@ -299,9 +393,10 @@ void Variable::ParseDef(std::string varDefString)
 		this->type = Float_type;
 		this->name = varDefString.substr(varDefString.find("float", 0) + 6);
 	}
-	
+
 }
 
+// parse  info from useing : "a" ,"1.0"
 void Variable::ParseUse(std::string useString)
 {
 	std::stringstream ss(useString);
@@ -334,9 +429,26 @@ std::string Variable::GetTypeString()
 		return "float";
 }
 
+std::string Variable::getString()
+{
+	if (isConstant)
+	{
+		switch (type)
+		{
+		case Int_type:return std::to_string(int(constantVal));
+		case Float_type:return std::to_string(constantVal);
+		default:return "Invalid type";
+		}
+	}
+	else
+	{
+		return name;
+	}
+}
 
-Statement::Statement(int lines, BasicBlock*parent) 
-	:lineNumber(lines),parentBlock(parent)
+
+Statement::Statement(int lines, BasicBlock*parent)
+	:lineNumber(lines), parentBlock(parent)
 {
 
 }
@@ -349,24 +461,41 @@ Statement::Statement(OperationType ope, Variable*res, Variable*param1, BasicInte
 	result = res;
 }
 
+std::string Statement::removeD(std::string input)
+{
+	if (input.find("(D)", 0) != std::string::npos)
+	{
+		while (input.find("(D)", 0) != std::string::npos)
+		{
+			input.replace(input.find("(D)", 0), 3, "");
+		}
+		return input;
+	}
+	else
+	{
+		return input;
+	}
+}
+
 bool Statement::Parse(std::string statementString)
 {
+	statementString = removeD(statementString);
 	Variable* var;
 	// "# i_2 = PHI <i_5(3), i_7(4)>"
 	if (statementString.find("PHI", 0) != std::string::npos)
 	{
 		this->operation = PHI_OPE;
-		var = new Variable(statementString.substr(statementString.find("#", 0) + 2, statementString.find("=", 0) -statementString.find("#",0)- 3));
+		var = new Variable(statementString.substr(statementString.find("#", 0) + 2, statementString.find("=", 0) - statementString.find("#", 0) - 3));
 		this->result = GetLocalVariable(var);
 		delete var;
 
-		std::string source1 = statementString.substr(statementString.find("<", 0) + 1, statementString.find(",", 0) -statementString.find("<",0)- 1);
-		std::string source2 = statementString.substr(statementString.find(",", 0) + 2, statementString.find(">", 0) - statementString.find(",",0)-2);
+		std::string source1 = statementString.substr(statementString.find("<", 0) + 1, statementString.find(",", 0) - statementString.find("<", 0) - 1);
+		std::string source2 = statementString.substr(statementString.find(",", 0) + 2, statementString.find(">", 0) - statementString.find(",", 0) - 2);
 		var = new Variable();
 		var->ParseUse(source1);
 		this->params.push_back(GetLocalVariable(var));
 		DeleteNonConstantVar(var);
-		
+
 		var = new Variable();
 		var->ParseUse(source2);
 		this->params.push_back(GetLocalVariable(var));
@@ -374,13 +503,20 @@ bool Statement::Parse(std::string statementString)
 
 		return true;
 	}
-	// "goto <bb 7>;"
+	// "goto <bb 7>;" "goto <bb 5> (<L2>)"
 	if (statementString.find("goto", 0) != std::string::npos)
 	{
 		this->operation = GOTO_OPE;
 		std::string nextBlockName = statementString.substr(statementString.find("<", 0) + 1,
 			statementString.find(">", 0) - statementString.find("<") - 1);
 		this->trueNextBlockName = this->falseNextBlockName = nextBlockName;
+		//case for "goto <bb 5> (<L2>);"
+		if (statementString.find("(") != std::string::npos)
+		{
+			nextBlockName = statementString.substr(statementString.find("(", 0) + 2,
+				statementString.find(")", 0) - statementString.find("(", 0) - 3);
+			this->trueNextBlockName = this->falseNextBlockName = nextBlockName;
+		}
 		return true;
 	}
 	// "return _10;" or "return;"
@@ -412,7 +548,7 @@ bool Statement::Parse(std::string statementString)
 		this->operation = INT_TRANSFORM_OPE;
 
 		var = new Variable();
-		var->ParseUse(statementString.substr(statementString.find("(int)", 0) + 6, statementString.find(";",0) - statementString.find("(int)", 0) - 6));
+		var->ParseUse(statementString.substr(statementString.find("(int)", 0) + 6, statementString.find(";", 0) - statementString.find("(int)", 0) - 6));
 		params.push_back(GetLocalVariable(var));
 		DeleteNonConstantVar(var);
 
@@ -443,7 +579,7 @@ bool Statement::Parse(std::string statementString)
 			var = new Variable(statementString.substr(2, statementString.find("=", 0) - 3));
 			this->result = GetLocalVariable(var);
 			DeleteNonConstantVar(var);
-			
+
 			this->functionCalled = statementString.substr(statementString.find("=", 0) + 2,
 				statementString.find(" (", 0) - statementString.find("=", 0) - 2);
 		}
@@ -458,7 +594,7 @@ bool Statement::Parse(std::string statementString)
 		// only one parameter, end with ");"
 		if (paramEndPos == std::string::npos)
 		{
-			paramEndPos = statementString.find(";",0) - 1;
+			paramEndPos = statementString.find(";", 0) - 1;
 		}
 		while (paramEndPos != std::string::npos && (paramStartPos < paramEndPos))
 		{
@@ -478,9 +614,9 @@ bool Statement::Parse(std::string statementString)
 		return true;
 	}
 	// "_3 = i_2(D) + 10;"
-	if (statementString.find("=",0) != std::string::npos)
+	if (statementString.find("=", 0) != std::string::npos)
 	{
-		var = new Variable(statementString.substr(2, statementString.find("=",0)-3));
+		var = new Variable(statementString.substr(2, statementString.find("=", 0) - 3));
 		this->result = GetLocalVariable(var);
 		DeleteNonConstantVar(var);
 
@@ -491,8 +627,7 @@ bool Statement::Parse(std::string statementString)
 		var = new Variable();
 		var->ParseUse(source);
 		// means there is only one right value
-		if (source.find(" ", 0) == std::string::npos || 
-			var->isConstant)
+		if (source.find(" ", 0) == std::string::npos)
 		{
 			this->operation = EQUAL_OPE;
 			this->params.push_back(GetLocalVariable(var));
@@ -505,7 +640,7 @@ bool Statement::Parse(std::string statementString)
 	{
 		this->operation = MULTI_OPE;
 		std::string source1 = statementString.substr(statementString.find("=", 0) + 2, statementString.find("*", 0) - statementString.find("=", 0) - 3);
-		std::string source2 = statementString.substr(statementString.find("*", 0) + 2, statementString.find(";", 0) - statementString.find("*", 0) -2);
+		std::string source2 = statementString.substr(statementString.find("*", 0) + 2, statementString.find(";", 0) - statementString.find("*", 0) - 2);
 
 		var = new Variable();
 		var->ParseUse(source1);
@@ -540,12 +675,12 @@ bool Statement::Parse(std::string statementString)
 		this->operation = PLUS_OPE;
 		std::string source1 = statementString.substr(statementString.find("=", 0) + 2, statementString.find("+", 0) - statementString.find("=", 0) - 3);
 		std::string source2 = statementString.substr(statementString.find("+", 0) + 2, statementString.find(";", 0) - statementString.find("+", 0) - 2);
-		
+
 		var = new Variable();
 		var->ParseUse(source1);
 		this->params.push_back(GetLocalVariable(var));
 		DeleteNonConstantVar(var);
-		
+
 		var = new Variable();
 		var->ParseUse(source2);
 		this->params.push_back(GetLocalVariable(var));
@@ -579,13 +714,13 @@ bool Statement::Parse(std::string statementString)
 	if (isValidStatement)
 	{
 		std::cout << "Statement[ " << this->lineNumber << "]" <<
-			(this->result ? this->result->name : "None") <<" = "<<
-			this->operation<<" ( ";
+			(this->result ? this->result->name : "None") << " = " <<
+			this->operation << " ( ";
 		for (Variable *it : this->params)
 		{
 			std::cout << it->name << " ";
 		}
-		std::cout <<")"<< std::endl;
+		std::cout << ")" << std::endl;
 	}
 #endif
 	return false;
@@ -607,8 +742,8 @@ void Statement::ParseBranch(std::vector<std::string>& ifelseString)
 		ifelseString[3].find(">", 0) - ifelseString[1].find("<", 0) - 1);
 	std::string comparisonExp = ifelseString[0].substr(ifelseString[0].find("(", 0) + 1,
 		ifelseString[0].length() - 7);
-	std::string source1 = comparisonExp.substr(0, comparisonExp.find(" ",0) - 0);
-	
+	std::string source1 = comparisonExp.substr(0, comparisonExp.find(" ", 0) - 0);
+
 	comparisonExp = comparisonExp.substr(comparisonExp.find(" ", 0) + 1, std::string::npos);
 	this->operation = COMP_OPE;
 	this->compareOpe = comparisonExp.substr(0, comparisonExp.find(" ", 0) - 0);
@@ -626,8 +761,8 @@ void Statement::ParseBranch(std::vector<std::string>& ifelseString)
 	this->params.push_back(GetLocalVariable(var));
 	DeleteNonConstantVar(var);
 #if (defined DEBUG) || (defined DEBUG_STATE)
-	std::cout << "if( " << params[0]->name <<" "<< this->operation <<" "<< params[1]->name << " ) goto " <<
-		trueNextBlockName << " else goto " << falseNextBlockName<<std::endl;
+	std::cout << "if( " << params[0]->name << " " << this->operation << " " << params[1]->name << " ) goto " <<
+		trueNextBlockName << " else goto " << falseNextBlockName << std::endl;
 #endif
 }
 
@@ -637,29 +772,29 @@ void Statement::Print()
 	std::cout << "    ";
 	switch (this->operation)
 	{
-	case PLUS_OPE:std::cout << result->name << " = " << params[0]->name << " + " << params[1]->name << std::endl; break;
-	case MINUS_OPE:std::cout << result->name << " = " << params[0]->name << " - " << params[1]->name << std::endl; break;
-	case MULTI_OPE:std::cout << result->name << " = " << params[0]->name << " * " << params[1]->name << std::endl; break;
-	case DIV_OPE:std::cout << result->name << " = " << params[0]->name << " / " << params[1]->name << std::endl; break;
-	case EQUAL_OPE:std::cout << result->name << " = " << params[0]->name << std::endl; break;
-	case CALL_OPE:std::cout << ((result != NULL) ? result->name + " = ":"")<< functionCalled<<" ("; 
+	case PLUS_OPE:std::cout << result->getString() << " = " << params[0]->getString() << " + " << params[1]->getString() << std::endl; break;
+	case MINUS_OPE:std::cout << result->getString() << " = " << params[0]->getString() << " - " << params[1]->getString() << std::endl; break;
+	case MULTI_OPE:std::cout << result->getString() << " = " << params[0]->getString() << " * " << params[1]->getString() << std::endl; break;
+	case DIV_OPE:std::cout << result->getString() << " = " << params[0]->getString() << " / " << params[1]->getString() << std::endl; break;
+	case EQUAL_OPE:std::cout << result->getString() << " = " << params[0]->getString() << std::endl; break;
+	case CALL_OPE:std::cout << ((result != NULL) ? result->getString() + " = " : "") << functionCalled << " (";
 		for (Variable*var : params) {
-			std::cout << var->name << (var != *params.rbegin() ? ", ":"");
+			std::cout << var->getString() << (var != *params.rbegin() ? ", " : "");
 		}
 		std::cout << ")" << std::endl;
 		break;
-	case COMP_OPE:std::cout << "if (" << params[0]->name << " " << compareOpe <<" "<< params[1]->name << ")"<<std::endl;
-		std::cout<<"      goto <"<<trueNextBlockName<<">"<<std::endl;
+	case COMP_OPE:std::cout << "if (" << params[0]->getString() << " " << compareOpe << " " << params[1]->getString() << ")" << std::endl;
+		std::cout << "      goto <" << trueNextBlockName << ">" << std::endl;
 		std::cout << "    else" << std::endl;
 		std::cout << "      goto <" << falseNextBlockName << ">" << std::endl; break;
-	case PHI_OPE:std::cout << result->name << " = " <<"PHI <"<< params[0]->name << ", " << params[1]->name <<">"<< std::endl; break;
-	case GOTO_OPE:std::cout << "goto <" << trueNextBlockName <<">"<< std::endl; break;
-	case RETURN_OPE:std::cout << "return " << (params.size() == 1 ? params[0]->name : "")<< std::endl; break;
-	case INT_TRANSFORM_OPE:std::cout << result->name << " = (int) " << params[0]->name << std::endl; break;
-	case FLOAT_TRANSFORM_OPE:std::cout << result->name << " = (float) " << params[0]->name << std::endl; break;
-	case INTERSECT_OPE:std::cout << result->name << " = " << params[0]->name <<
-		" Inersect " << intersect->getString()<<std::endl; break;
-	default:std::cout << "Error Print Statement at " <<lineNumber<< std::endl;
+	case PHI_OPE:std::cout << result->getString() << " = " << "PHI <" << params[0]->getString() << ", " << params[1]->getString() << ">" << std::endl; break;
+	case GOTO_OPE:std::cout << "goto <" << trueNextBlockName << ">" << std::endl; break;
+	case RETURN_OPE:std::cout << "return " << (params.size() == 1 ? params[0]->getString() : "") << std::endl; break;
+	case INT_TRANSFORM_OPE:std::cout << result->getString() << " = (int) " << params[0]->getString() << std::endl; break;
+	case FLOAT_TRANSFORM_OPE:std::cout << result->getString() << " = (float) " << params[0]->getString() << std::endl; break;
+	case INTERSECT_OPE:std::cout << result->getString() << " = " << params[0]->getString() <<
+		" Inersect " << intersect->getString() << std::endl; break;
+	default:std::cout << "Error Print Statement at " << lineNumber << std::endl;
 	}
 }
 
@@ -676,6 +811,77 @@ Variable* Statement::GetLocalVariable(Variable *var)
 		return var;
 	}
 	return parentBlock->parentFunction->GetLocalVariable(var->name);
+}
+
+bool Statement::JudgeCompare()
+{
+	if (compareOpe == "<")
+	{
+		return params[0]->getValue() < params[1]->getValue();
+	}
+	else if (compareOpe == "<=")
+	{
+		return params[0]->getValue() <= params[1]->getValue();
+	}
+	else if (compareOpe == ">")
+	{
+		return params[0]->getValue() > params[1]->getValue();
+	}
+	else if (compareOpe == ">=")
+	{
+		return params[0]->getValue() >= params[1]->getValue();
+	}
+	else if (compareOpe == "!=")
+	{
+		return params[0]->getValue() != params[1]->getValue();
+	}
+	else if (compareOpe == "==")
+	{
+		return params[0]->getValue() == params[1]->getValue();
+	}
+	else
+		return false;
+}
+
+void Statement::Simulate()
+{
+	switch (operation)
+	{
+	case PLUS_OPE:
+		result->setValue(params[0]->getValue() + params[1]->getValue());break;
+	case MINUS_OPE:result->setValue(params[0]->getValue() - params[1]->getValue()); break;
+	case MULTI_OPE:result->setValue(params[0]->getValue() * params[1]->getValue()); break;
+	case DIV_OPE:result->setValue(params[0]->getValue() / params[1]->getValue()); break;
+	case EQUAL_OPE:result->setValue(params[0]->getValue()); break;
+	case CALL_OPE:;
+		break;
+	case COMP_OPE:
+		if (JudgeCompare())
+			parentBlock->simulationNextBlock = trueNextBlockName;
+		else
+			parentBlock->simulationNextBlock = falseNextBlockName;
+		break;
+	case PHI_OPE:
+		if (params[0]->defTime > params[1]->defTime)
+			result->setValue(params[0]->getValue());
+		else
+			result->setValue(params[1]->getValue());
+		break;
+	case GOTO_OPE:
+		parentBlock->simulationNextBlock=trueNextBlockName; 
+		break;
+	case RETURN_OPE:
+		parentBlock->simulationNextBlock = "exit";
+		break;
+	case INT_TRANSFORM_OPE:result->setValue(params[0]->getValue()); break;
+	case FLOAT_TRANSFORM_OPE:result->setValue(params[0]->getValue()); break;
+	case INTERSECT_OPE:; break;
+	default:std::cout << "Error Print Statement at " << lineNumber << std::endl;
+	}
+	if (this->result != NULL)
+	{
+		//std::cout << result->getString() << " : " << result->getValue() << std::endl;
+	}
 }
 
 
@@ -696,12 +902,12 @@ Variable* Statement::GetLocalVariable(Variable *var)
 //}
 
 BasicBlock::BasicBlock(Function* parent)
-	:parentFunction(parent),nextMethod(DefaultNext)
+	:parentFunction(parent), nextMethod(DefaultNext)
 {
 }
 
 BasicBlock::BasicBlock(std::string name, Function*parent)
-	:blockName(name),nextMethod(DefaultNext),parentFunction(parent)
+	: blockName(name), nextMethod(DefaultNext), parentFunction(parent)
 {
 
 }
@@ -709,7 +915,7 @@ BasicBlock::BasicBlock(std::string name, Function*parent)
 // Parse block definition string like: <bb 1>:
 void BasicBlock::ParseDef(std::string blockDefString)
 {
-	this->blockName = blockDefString.substr(blockDefString.find("<", 0) + 1, blockDefString.find(">", 0) - blockDefString.find("<",0)-1);
+	this->blockName = blockDefString.substr(blockDefString.find("<", 0) + 1, blockDefString.find(">", 0) - blockDefString.find("<", 0) - 1);
 }
 
 bool BasicBlock::checkIsDef(std::string unknownString)
@@ -764,7 +970,7 @@ void BasicBlock::finishBlock()
 			defaultNextBlockName = lastStatement->trueNextBlockName;
 			if (lastStatement->trueNextBlockName != lastStatement->falseNextBlockName)
 			{
-				std::cout << "Finish block <"<<blockName<<"> error !" << std::endl;
+				std::cout << "Finish block <" << blockName << "> error !" << std::endl;
 				exit(1);
 			}
 		}
@@ -805,6 +1011,111 @@ int BasicBlock::ReplaceVarUse(Variable *oldVar, Variable *newVar)
 	return changedVarCount;
 }
 
+// generate interval for comparison ,(true interval, false interval)
+std::vector<BasicInterval*> BasicBlock::generateInterval(std::string compareOpe, Variable *param)
+{
+	BasicInterval *intervalTrue, *intervalFalse;
+	// "< 0"
+	if (param->isConstant)
+	{
+		intervalTrue = new BasicInterval();
+		intervalFalse = new BasicInterval();
+		float constantVal = param->getValue();
+		if (compareOpe == "<")
+		{
+			// True branch
+			intervalTrue->range.setUpper(constantVal);
+			intervalTrue->range.MaxRangeUpper = false;
+			intervalTrue->range.MaxRangeLower = true;
+
+			// False branch
+			intervalFalse->range.setLower(constantVal);
+			intervalFalse->range.MaxRangeLower = false;
+			intervalFalse->range.MaxRangeUpper = true;
+		}
+		else if (compareOpe == "<=")
+		{
+			// True branch
+			intervalTrue->range.setUpper(constantVal);
+			intervalTrue->range.MaxRangeLower = true;
+			intervalTrue->range.MaxRangeUpper = false;
+
+			// False branch
+			intervalFalse->range.setLower(constantVal);
+			intervalFalse->range.MaxRangeLower = false;
+			intervalFalse->range.MaxRangeUpper = true;
+		}
+		else if (compareOpe == ">")
+		{
+			// True branch
+			intervalTrue->range.setLower(constantVal);
+			intervalTrue->range.MaxRangeUpper = true;
+			intervalTrue->range.MaxRangeLower = false;
+
+			// False branch
+			intervalFalse->range.setUpper(constantVal);
+			intervalFalse->range.MaxRangeLower = true;
+			intervalFalse->range.MaxRangeUpper = false;
+		}
+		else if (compareOpe == ">=")
+		{
+			// True branch
+			intervalTrue->range.setLower(constantVal);
+			intervalTrue->range.MaxRangeLower = false;
+			intervalTrue->range.MaxRangeUpper = true;
+
+			// False branch
+			intervalFalse->range.setUpper(constantVal);
+			intervalFalse->range.MaxRangeLower = true;
+			intervalFalse->range.MaxRangeUpper = false;
+		}
+		else if (compareOpe == "!=")
+		{
+			// True branch
+			intervalTrue->range.setLower(constantVal);
+			intervalTrue->range.setUpper(constantVal);
+			intervalTrue->range.notEqual = true;
+			intervalTrue->range.MaxRangeLower = false;
+			intervalTrue->range.MaxRangeUpper = false;
+
+			// False branch
+			intervalFalse->range.setLower(constantVal);
+			intervalFalse->range.setUpper(constantVal);
+			intervalFalse->range.MaxRangeLower = false;
+			intervalFalse->range.MaxRangeUpper = false;
+		}
+		else if (compareOpe == "==")
+		{
+			// True branch
+			intervalTrue->range.setLower(constantVal);
+			intervalTrue->range.setUpper(constantVal);
+			intervalTrue->range.MaxRangeLower = false;
+			intervalTrue->range.MaxRangeUpper = false;
+
+			// False branch
+			intervalFalse->range.setLower(constantVal);
+			intervalFalse->range.setUpper(constantVal);
+			intervalFalse->range.notEqual = true;
+			intervalFalse->range.MaxRangeLower = false;
+			intervalFalse->range.MaxRangeUpper = false;
+		}
+	}
+	// "< i_1"
+	else
+	{
+		intervalTrue = new SymbolInterval();
+		intervalFalse = new SymbolInterval();
+		intervalTrue->setCompareOpe(compareOpe);
+		intervalFalse->setCompareOpe(reverseCompareOpe(compareOpe));
+		intervalTrue->setBound(param);
+		intervalFalse->setBound(param);
+	}
+	std::vector<BasicInterval*> ret;
+	ret.push_back(intervalTrue);
+	ret.push_back(intervalFalse);
+	return ret;
+}
+
 void BasicBlock::Print()
 {
 	std::cout << "  <" << this->blockName << ">:" << std::endl;
@@ -812,8 +1123,29 @@ void BasicBlock::Print()
 	{
 		st->Print();
 	}
-	if(nextMethod == DefaultNext)
+	if (nextMethod == DefaultNext)
 		std::cout << "  ----->  <" << defaultNextBlockName << ">" << std::endl;
+}
+
+void BasicBlock::Simulate()
+{
+	//std::cout << this->blockName <<std::endl;
+	for (Statement *state : statements)
+	{
+		state->Simulate();
+	}
+}
+
+BasicBlock* BasicBlock::GetNextBlock()
+{
+	if (simulationNextBlock != "")
+	{
+		return parentFunction->bbs[simulationNextBlock];
+	}
+	else
+	{
+		return parentFunction->bbs[defaultNextBlockName];
+	}
 }
 
 Function::Function()
@@ -865,7 +1197,7 @@ void Function::ParseParams(std::string paramString)
 void Function::DeclareLocalVar(Variable *var)
 {
 #if defined(DEBUG) || defined(DEBUG_FUNC)
-	std::cout << var->type <<" "<< var->name << ";"<<std::endl;
+	std::cout << var->type << " " << var->name << ";" << std::endl;
 #endif
 	localVarsMap[var->name] = var;
 }
@@ -901,12 +1233,12 @@ void Function::Print()
 	std::cout << this->functionName << "(";
 	for (Variable *var : this->params)
 	{
-		std::cout << var->GetTypeString()<<" "<<var->name << (var != *params.rbegin() ? ", " : "" );
+		std::cout << var->GetTypeString() << " " << var->name << (var != *params.rbegin() ? ", " : "");
 	}
 	std::cout << "):" << std::endl;
-	for (std::map<std::string, Variable*>::iterator it = localVarsMap.begin();it != localVarsMap.end();it++)
+	for (std::map<std::string, Variable*>::iterator it = localVarsMap.begin(); it != localVarsMap.end(); it++)
 	{
-		std::cout << "  " << it->second->GetTypeString() <<" "<< it->second->name << std::endl;
+		std::cout << "  " << it->second->GetTypeString() << " " << it->second->name << std::endl;
 	}
 	for (std::map<std::string, BasicBlock*>::iterator it = this->bbs.begin(); it != this->bbs.end(); it++)
 	{
@@ -914,11 +1246,100 @@ void Function::Print()
 	}
 }
 
+void Function::PrintVars()
+{
+
+	std::map<std::string, Variable*>::iterator it;
+	for (it = localVarsMap.begin(); it != localVarsMap.end(); it++)
+	{
+		std::cout << it->first << " : " << it->second->getValue() << std::endl;
+	}
+}
+
+void Function::resetVarDefTime()
+{
+	std::map<std::string, Variable*>::iterator it;
+	for (it = localVarsMap.begin(); it != localVarsMap.end(); it++)
+	{
+		it->second->defTime = 0;
+	}
+}
+
+void Function::Simulate()
+{
+	BasicBlock * currentBlock;
+	float startValue = 200;
+	float endValue = 300;
+	for (int i = 0; i < 100; i++)
+	{
+		resetVarDefTime();
+		localVarsMap["k_4"]->setValue(startValue + (endValue - startValue) / 100 * i);
+		currentBlock = bbs["entry"];
+		while (currentBlock != bbs["exit"])
+		{
+			totalTime++;
+			currentBlock->Simulate();
+			currentBlock = currentBlock->GetNextBlock();
+			if (currentBlock->defaultNextBlockName == "exit" &&
+				this->returnVar == NULL)
+			{
+				this->returnVar = currentBlock->lastStatement->params[0];
+			}
+		}
+		PrintVars();
+		StoreReturnValue();
+	}
+	for (float val : resultPossibleValues)
+	{
+		std::cout << val << ", ";
+	}
+	std::cout << std::endl;
+}
+
+void Function::StoreReturnValue()
+{
+	if (returnVar != NULL)
+	{
+		resultPossibleValues.push_back(localVarsMap[returnVar->getString()]->getValue());
+	}
+}
+
+void Function::convertVariable(Variable *convert, BasicBlock*block, std::string ope, Variable*bound)
+{
+	std::string varTrueName = convert->name + "_t";
+	std::string varFalseName = convert->name + "_f";
+	Variable *varTrue = GetLocalVariable(varTrueName);
+	Variable *varFalse = GetLocalVariable(varFalseName);
+	Variable *oldVar = convert;
+
+	std::vector<BasicInterval*> intervals = BasicBlock::generateInterval(ope,
+		bound);
+
+	std::set<std::string> dominatingBlocks = findDom(block->trueNextBlockName);
+	for (std::string domblock : dominatingBlocks)
+	{
+		bbs[domblock]->ReplaceVarUse(oldVar, varTrue);
+	}
+	bbs[block->trueNextBlockName]->addStatementBefore(
+		new Statement(INTERSECT_OPE, varTrue, oldVar, intervals[0]));
+	dominatingBlocks = findDom(block->falseNextBlockName);
+	for (std::string domblock : dominatingBlocks)
+	{
+		bbs[domblock]->ReplaceVarUse(oldVar, varFalse);
+	}
+	bbs[block->falseNextBlockName]->addStatementBefore(
+		new Statement(INTERSECT_OPE, varFalse, oldVar, intervals[1]));
+}
+
 void Function::convertToeSSA()
 {
 	BasicBlock *currentBlock;
+	std::string varTrueName, varFalseName;
+	Variable *varTrue, *varFalse, *oldVar;
+	std::vector<BasicInterval*> intervals;
+	std::string compareOpe;
 	std::map<std::string, BasicBlock*>::iterator it;
-	for(it = bbs.begin(); it!= bbs.end(); it++)
+	for (it = bbs.begin(); it != bbs.end(); it++)
 	{
 		currentBlock = it->second;
 		if (currentBlock->nextMethod == BranchNext)
@@ -927,101 +1348,19 @@ void Function::convertToeSSA()
 			if (!currentBlock->lastStatement->params[0]->isConstant &&
 				!currentBlock->lastStatement->params[1]->isConstant)
 			{
-				
+				convertVariable(currentBlock->lastStatement->params[0], currentBlock,
+					currentBlock->lastStatement->compareOpe, currentBlock->lastStatement->params[1]);
+				convertVariable(currentBlock->lastStatement->params[1], currentBlock,
+					reverseCompareOpe(currentBlock->lastStatement->compareOpe), currentBlock->lastStatement->params[0]);
 			}
 			// i_1 < 0
-			else 
-			if (!currentBlock->lastStatement->params[0]->isConstant &&
-				currentBlock->lastStatement->params[1]->isConstant)
-			{
-				std::string varTrueName = currentBlock->lastStatement->params[0]->name + "_t";
-				std::string varFalseName = currentBlock->lastStatement->params[0]->name + "_f";
-				Variable *varTrue = GetLocalVariable(varTrueName);
-				Variable *varFalse = GetLocalVariable(varFalseName);
-				Variable *oldVar = currentBlock->lastStatement->params[0];
-				BasicInterval *intervalTrue = new BasicInterval();
-				BasicInterval *intervalFalse = new BasicInterval();
-				std::string compareOpe = currentBlock->lastStatement->compareOpe;
-				float constantVal = currentBlock->lastStatement->params[1]->getValue();
-				if (compareOpe == "<")
+			else
+				if (!currentBlock->lastStatement->params[0]->isConstant &&
+					currentBlock->lastStatement->params[1]->isConstant)
 				{
-					// True branch
-					intervalTrue->range.setUpper(constantVal);
-					intervalTrue->range.MaxRangeUpper = false;
-					intervalTrue->range.MaxRangeLower = true;
-
-					// False branch
-					intervalFalse->range.setLower(constantVal);
-					intervalFalse->range.MaxRangeLower = false;
-					intervalFalse->range.MaxRangeUpper = true;
+					convertVariable(currentBlock->lastStatement->params[0], currentBlock,
+						currentBlock->lastStatement->compareOpe, currentBlock->lastStatement->params[1]);
 				}
-				else if (compareOpe == "<=")
-				{
-					// True branch
-					intervalTrue->range.setUpper(constantVal);
-					intervalTrue->range.MaxRangeLower = true;
-					intervalTrue->range.MaxRangeUpper = false;
-
-					// False branch
-					intervalFalse->range.setLower(constantVal);
-					intervalFalse->range.MaxRangeLower = false;
-					intervalFalse->range.MaxRangeUpper = true;
-				}
-				else if (compareOpe == ">")
-				{
-					// True branch
-					intervalTrue->range.setLower(constantVal);
-					intervalTrue->range.MaxRangeUpper = true;
-					intervalTrue->range.MaxRangeLower = false;
-
-					// False branch
-					intervalFalse->range.setUpper(constantVal);
-					intervalFalse->range.MaxRangeLower = true;
-					intervalFalse->range.MaxRangeUpper = false;
-				}
-				else if (compareOpe == ">=")
-				{
-					// True branch
-					intervalTrue->range.setLower(constantVal);
-					intervalTrue->range.MaxRangeLower = false;
-					intervalTrue->range.MaxRangeUpper = true;
-
-					// False branch
-					intervalFalse->range.setUpper(constantVal);
-					intervalFalse->range.MaxRangeLower = true;
-					intervalFalse->range.MaxRangeUpper = false;
-				}
-				else if (compareOpe == "!=")
-				{
-					// True branch
-					intervalTrue->range.setLower(constantVal);
-					intervalTrue->range.setUpper(constantVal);
-					intervalTrue->range.notEqual = true;
-					intervalTrue->range.MaxRangeLower = false;
-					intervalTrue->range.MaxRangeUpper = false;
-
-					// False branch
-					intervalFalse->range.setLower(constantVal);
-					intervalFalse->range.setUpper(constantVal);
-					intervalFalse->range.MaxRangeLower = false;
-					intervalFalse->range.MaxRangeUpper = false;
-				}
-
-				std::set<std::string> dominatingBlocks = findDom(currentBlock->trueNextBlockName);
-				for (std::string domblock : dominatingBlocks)
-				{
-					bbs[domblock]->ReplaceVarUse(oldVar, varTrue);
-				}
-				bbs[currentBlock->trueNextBlockName]->addStatementBefore(
-					new Statement(INTERSECT_OPE, varTrue, oldVar, intervalTrue)); 
-				dominatingBlocks = findDom(currentBlock->falseNextBlockName);
-				for (std::string domblock : dominatingBlocks)
-				{
-					bbs[domblock]->ReplaceVarUse(oldVar, varFalse);
-				}
-				bbs[currentBlock->falseNextBlockName]->addStatementBefore(
-					new Statement(INTERSECT_OPE, varFalse, oldVar, intervalFalse));
-			}
 		}
 	}
 }
@@ -1036,7 +1375,7 @@ void Function::calculateDominate()
 	// construct the pred basic block connections
 	for (it = bbs.begin(); it != bbs.end(); it++)
 	{
- 		N.insert(it->first);
+		N.insert(it->first);
 		// Branch block, add two pred edges
 		if (it->second->nextMethod == BranchNext)
 		{
@@ -1074,7 +1413,7 @@ void Function::calculateDominate()
 				{
 					std::set<std::string> temp;
 					temp = OUT[predName];
-					ret = IntersectSet(ret,temp);
+					ret = IntersectSet(ret, temp);
 				}
 				if (!checkEqual(ret, IN[basicBlockName]))
 					changed = true;
@@ -1183,7 +1522,7 @@ bool SSAGraph::readFromFile(std::string filename)
 	BasicBlock *lastBlock = NULL;
 	BasicBlock *currentBlock = NULL;
 	Function *currentFunction = NULL;
-	Statement *currentStatement=NULL;
+	Statement *currentStatement = NULL;
 	std::string lineString;
 	std::deque<std::string> functionNames;
 	bool inFunction = true;
@@ -1246,7 +1585,7 @@ bool SSAGraph::readFromFile(std::string filename)
 					ct--;
 				}
 				lineNum += 3;
-				currentStatement = new Statement(lineNum -3, currentBlock);
+				currentStatement = new Statement(lineNum - 3, currentBlock);
 				currentStatement->ParseBranch(ifelseString);
 				currentBlock->addStatement(currentStatement);
 				continue;
@@ -1263,7 +1602,7 @@ bool SSAGraph::readFromFile(std::string filename)
 				currentFunction->bbs[currentBlock->blockName] = currentBlock;
 			}
 			// otherwise all consider statements in the block
-			else 
+			else
 			{
 				if (inEntry && !lineString.empty())
 				{
@@ -1289,7 +1628,7 @@ bool SSAGraph::readFromFile(std::string filename)
 
 void SSAGraph::Print()
 {
-	for (std::map<std::string,Function*>::iterator it = functions.begin();it != functions.end();it++)
+	for (std::map<std::string, Function*>::iterator it = functions.begin(); it != functions.end(); it++)
 	{
 		it->second->Print();
 	}
@@ -1311,4 +1650,75 @@ void SSAGraph::convertToeSSA()
 	{
 		it->second->convertToeSSA();
 	}
+}
+
+VarNode::VarNode(Variable *V)
+	:V(V), interval(Range(-1, 1, Unknown)), abstractState(0) {}
+
+void VarNode::init(bool outside)
+{
+	Variable *V = getVariable();
+	if (V->isConstant)
+	{
+		float value = V->getValue();
+		this, setRange(Range(value, value));
+	}
+	else
+	{
+		if (!outside)
+		{
+			this->setRange(Range(-1, 1, Unknown));
+		}
+		else
+		{
+			this->getRange().setMaxRange(true, true);
+		}
+	}
+}
+
+void VarNode::Print()
+{
+	std::cout << this->getVariable()->getString();
+}
+
+void VarNode::storeAbstractState()
+{
+	if (this->interval.isUnknown())
+	{
+		std::cout << "Error !, store abstract state doesn't handle empty set";
+		return;
+	}
+	if (interval.MaxRangeLower)
+	{
+		if (interval.MaxRangeUpper)
+		{
+			abstractState = '?';
+		}
+		else
+		{
+			abstractState = '-';
+		}
+	}
+	else if (interval.MaxRangeUpper)
+	{
+		abstractState = '+';
+	}
+	else
+	{
+		abstractState = '0';
+	}
+}
+
+BasicOp::BasicOp(BasicInterval *_intersect, VarNode *_sink, Statement*_state)
+	:intersect(_intersect), sink(_sink), state(_state) {}
+
+BasicOp::~BasicOp()
+{
+	if (intersect != NULL)
+		delete intersect;
+}
+
+void BasicOp::fixIntersects(VarNode *V)
+{
+
 }
