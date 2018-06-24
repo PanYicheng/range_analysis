@@ -11,9 +11,10 @@ class Variable;
 class BasicBlock;
 class Function;
 class VarNode;
+class SSAGraph;
 
 
-static int totalTime = 0;
+static int totalTime = 1;
 
 enum BoundType {InitialBound, ReachableBound,UnreacheableBound,FutureBound, InfiniteBound};
 enum RangeType {Unknown,Regular, Empty};
@@ -154,6 +155,7 @@ public:
 	 
 	// simulation data
 	int defTime = 0;
+	bool isInput = false;
 };
 
 enum OperationType {
@@ -192,6 +194,7 @@ public:
 
 	void Simulate();
 	bool JudgeCompare();
+
 };
 
 enum BBNextMethod {DefaultNext, BranchNext, GotoNext};
@@ -231,9 +234,12 @@ public:
 class Function
 {
 public:
+	SSAGraph * parent;
+
 	std::string functionName;
 	std::map<std::string, BasicBlock*> bbs;
 	std::vector<Variable *> params;
+	std::vector<std::string> inputParamNames;
 	std::map<std::string, Variable*> localVarsMap;
 
 	//Dataflow Data of Dominate point
@@ -259,12 +265,11 @@ public:
 	void ParseParams(std::string paramString);
 	void Print();
 
-	void Simulate();
+	Variable Simulate(std::vector<float> inputParams);
 	void PrintVars();
 	void resetVarDefTime();
-	void StoreReturnValue();
+	void findInputParams();
 	Variable *returnVar = NULL;
-	std::vector<float> resultPossibleValues;
 	
 
 	void convertToeSSA();
@@ -278,6 +283,9 @@ public:
 	std::map<std::string, Function*> functions;
 	SSAGraph();
 	bool readFromFile(std::string filename);
+
+	void SimulateSolution();
+	std::vector<float> possibleResults;
 
 	void PrintDominate();
 	void Print();

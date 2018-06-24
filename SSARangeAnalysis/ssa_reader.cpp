@@ -7,6 +7,7 @@
 #include<sstream>
 
 #define MAX_LINE_LENGTH 255
+#define MAX_SIMULATION_STEP 10
 
 
 std::string reverseCompareOpe(std::string ope)
@@ -413,6 +414,8 @@ void Variable::ParseUse(std::string useString)
 		if (useString.find("(", 0) != std::string::npos)
 		{
 			this->name = useString.substr(0, useString.find("(", 0) - 0);
+			if (useString.find("(D)", 0) != std::string::npos)
+				this->isInput = true;
 		}
 		else
 		{
@@ -479,7 +482,7 @@ std::string Statement::removeD(std::string input)
 
 bool Statement::Parse(std::string statementString)
 {
-	statementString = removeD(statementString);
+	//statementString = removeD(statementString);
 	Variable* var;
 	// "# i_2 = PHI <i_5(3), i_7(4)>"
 	if (statementString.find("PHI", 0) != std::string::npos)
@@ -810,7 +813,12 @@ Variable* Statement::GetLocalVariable(Variable *var)
 	{
 		return var;
 	}
-	return parentBlock->parentFunction->GetLocalVariable(var->name);
+	Variable *ret = parentBlock->parentFunction->GetLocalVariable(var->name);
+	if (var->isInput)
+	{
+		ret->isInput = true;
+	}
+	return ret;
 }
 
 bool Statement::JudgeCompare()
@@ -845,6 +853,7 @@ bool Statement::JudgeCompare()
 
 void Statement::Simulate()
 {
+	std::vector<float> param;
 	switch (operation)
 	{
 	case PLUS_OPE:
@@ -853,7 +862,16 @@ void Statement::Simulate()
 	case MULTI_OPE:result->setValue(params[0]->getValue() * params[1]->getValue()); break;
 	case DIV_OPE:result->setValue(params[0]->getValue() / params[1]->getValue()); break;
 	case EQUAL_OPE:result->setValue(params[0]->getValue()); break;
-	case CALL_OPE:;
+	case CALL_OPE:
+		for (Variable *var : params)
+		{
+			param.push_back(var->getValue());
+		}
+		if (result != NULL)
+		{
+			result->setValue(
+				parentBlock->parentFunction->parent->functions[functionCalled]->Simulate(param).getValue());
+		}
 		break;
 	case COMP_OPE:
 		if (JudgeCompare())
@@ -1205,6 +1223,8 @@ void Function::DeclareLocalVar(Variable *var)
 void Function::DeclareParameter(Variable *param)
 {
 	params.push_back(param);
+	//	First fill it with function definition parameters
+	inputParamNames.push_back(param->name);
 	localVarsMap[param->name] = param;
 }
 
@@ -1265,42 +1285,58 @@ void Function::resetVarDefTime()
 	}
 }
 
-void Function::Simulate()
+Variable Function::Simulate(std::vector<float> inputParams)
 {
+	findInputParams();
 	BasicBlock * currentBlock;
-	float startValue = 200;
-	float endValue = 300;
-	for (int i = 0; i < 100; i++)
+	int index;
+	resetVarDefTime();
+	index = 0;
+	if (inputParams.size() != inputParamNames.size())
 	{
-		resetVarDefTime();
-		localVarsMap["k_4"]->setValue(startValue + (endValue - startValue) / 100 * i);
-		currentBlock = bbs["entry"];
-		while (currentBlock != bbs["exit"])
+		std::cout << "Error , parameter number isn't same "<<std::endl;
+	}
+	for (std::string input : inputParamNames)
+	{
+		localVarsMap[input]->setValue(inputParams[index]);
+		index++;
+	}
+	currentBlock = bbs["entry"];
+	while (currentBlock != bbs["exit"])
+	{
+		totalTime++;
+		currentBlock->Simulate();
+		currentBlock = currentBlock->GetNextBlock();
+		if (currentBlock->defaultNextBlockName == "exit" &&
+			this->returnVar == NULL)
 		{
-			totalTime++;
-			currentBlock->Simulate();
-			currentBlock = currentBlock->GetNextBlock();
-			if (currentBlock->defaultNextBlockName == "exit" &&
-				this->returnVar == NULL)
-			{
-				this->returnVar = currentBlock->lastStatement->params[0];
-			}
+			this->returnVar = currentBlock->lastStatement->params[0];
 		}
-		PrintVars();
-		StoreReturnValue();
 	}
-	for (float val : resultPossibleValues)
-	{
-		std::cout << val << ", ";
-	}
-	std::cout << std::endl;
+	//PrintVars();
+	Variable ret(returnVar->name);
+	ret.setValue(localVarsMap[returnVar->getString()]->getValue());
+	return ret;
 }
 
-void Function::StoreReturnValue()
+
+void Function::findInputParams()
 {
-	if (returnVar != NULL)
+	std::map<std::string, Variable*>::iterator it;
+	for (it = localVarsMap.begin(); it != localVarsMap.end(); it++)
 	{
-		resultPossibleValues.push_back(localVarsMap[returnVar->getString()]->getValue());
+		if (it->second->isInput)
+		{
+			std::string varNameWithoutUnderscore = it->first.substr(0,
+				it->first.find("_", 0) - 0);
+			for (int i = 0; i < inputParamNames.size(); i++)
+			{
+				if (inputParamNames[i] == varNameWithoutUnderscore)
+				{
+					inputParamNames[i] = it->first;
+				}
+			}
+		}
 	}
 }
 
@@ -1547,6 +1583,7 @@ bool SSAGraph::readFromFile(std::string filename)
 			inFunction = false;
 			functions[functionNames.back()] = new Function(functionNames.back());
 			currentFunction = functions[functionNames.back()];
+			currentFunction->parent = this;
 			lastBlock = functions[functionNames.back()]->bbs["entry"];
 			currentBlock = lastBlock;
 			continue;
@@ -1649,6 +1686,37 @@ void SSAGraph::convertToeSSA()
 	for (std::map<std::string, Function*>::iterator it = functions.begin(); it != functions.end(); it++)
 	{
 		it->second->convertToeSSA();
+	}
+}
+
+void SSAGraph::SimulateSolution()
+{
+	std::map<std::string, Function*>::iterator it;
+	for (it = functions.begin(); it != functions.end(); it++)
+	{
+		it->second->findInputParams();
+	}
+	std::vector<float> fooInputStart;
+	std::vector<float> fooInputEnd;
+	std::vector<float> temp;
+	float val;
+	for (std::string str : functions["foo"]->inputParamNames)
+	{
+		std::cout << "Range for " << str << std::endl;
+		std::cout << "Min: " << std::endl;
+		std::cin >> val;
+		fooInputStart.push_back(val);
+		std::cout << "Max: " << std::endl;
+		std::cin >> val;
+		fooInputEnd.push_back(val);
+		temp.push_back(val);
+	}
+	int index = 0;
+	for (int i = -10; i <= 10; i++)
+	{
+		temp.clear();
+		temp.push_back(i);
+		std::cout<<(functions["foo"]->Simulate(temp)).getValue()<<std::endl;
 	}
 }
 

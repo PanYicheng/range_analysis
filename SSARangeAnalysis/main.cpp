@@ -4,7 +4,7 @@
 int main(int argc, char **argv)
 {
 	SSAGraph ssagraph;
-	if (!ssagraph.readFromFile("benchmark/t2.ssa"))
+	if (!ssagraph.readFromFile("benchmark/t7.ssa"))
 	{
 		return 1;
 	}
@@ -14,7 +14,7 @@ int main(int argc, char **argv)
 	std::cout <<std::endl<< "After converting to eSSA" << std::endl;
 	ssagraph.Print();*/
 
-	ssagraph.functions["foo"]->Simulate();
+	ssagraph.SimulateSolution();
 	system("pause");
 	return 0;
 }
