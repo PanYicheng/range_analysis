@@ -13,6 +13,7 @@ int main()
 	float val;
 	ss >> val;
 	cout <<"Read Value: "<< val << endl;
+	cout << int((unsigned int(-1) >> 1)) << endl;
 	system("pause");
 	return 0;
 }

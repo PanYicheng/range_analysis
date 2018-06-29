@@ -4,12 +4,17 @@
 int main(int argc, char **argv)
 {
 	SSAGraph ssagraph;
-	if (!ssagraph.readFromFile("benchmark/t7.ssa"))
+	std::string fileName;
+	std::cout << "Please input file name:" << std::endl;
+	std::cin >> fileName;
+	std::cout <<std::endl<< "Reading File: " << fileName << std::endl;
+	if(!ssagraph.readFromFile(fileName))
 	{
+		std::cout << "File read failed ! Try again !"<<std::endl;
 		return 1;
 	}
 	ssagraph.Print();
-	ssagraph.PrintDominate();
+	//ssagraph.PrintDominate();
 	/*ssagraph.convertToeSSA();
 	std::cout <<std::endl<< "After converting to eSSA" << std::endl;
 	ssagraph.Print();*/

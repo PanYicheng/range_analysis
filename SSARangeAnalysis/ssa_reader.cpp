@@ -1,10 +1,13 @@
 #include<ssa_reader.h>
 #include<fstream>
 #include<iostream>
+#include<cstdio>
 #include<iomanip>
 #include<cstdlib>
 #include<deque>
 #include<sstream>
+#include<algorithm>
+#include<limits.h>
 
 #define MAX_LINE_LENGTH 255
 #define MAX_SIMULATION_STEP 10
@@ -660,7 +663,7 @@ bool Statement::Parse(std::string statementString)
 	{
 		this->operation = DIV_OPE;
 		std::string source1 = statementString.substr(statementString.find("=", 0) + 2, statementString.find("/", 0) - statementString.find("=", 0) - 3);
-		std::string source2 = statementString.substr(statementString.find("/", 0) + 2, statementString.find(";", 0) - statementString.find("/", 0));
+		std::string source2 = statementString.substr(statementString.find("/", 0) + 2, statementString.find(";", 0) - statementString.find("/", 0) - 2);
 
 		var = new Variable();
 		var->ParseUse(source1);
@@ -1287,7 +1290,7 @@ void Function::resetVarDefTime()
 
 Variable Function::Simulate(std::vector<float> inputParams)
 {
-	findInputParams();
+	//findInputParams();
 	BasicBlock * currentBlock;
 	int index;
 	resetVarDefTime();
@@ -1691,6 +1694,7 @@ void SSAGraph::convertToeSSA()
 
 void SSAGraph::SimulateSolution()
 {
+	// locate the real paramter variable to pass the value
 	std::map<std::string, Function*>::iterator it;
 	for (it = functions.begin(); it != functions.end(); it++)
 	{
@@ -1699,25 +1703,143 @@ void SSAGraph::SimulateSolution()
 	std::vector<float> fooInputStart;
 	std::vector<float> fooInputEnd;
 	std::vector<float> temp;
+	std::vector<float> possibleResults;
+	int i,j;
 	float val;
 	for (std::string str : functions["foo"]->inputParamNames)
 	{
 		std::cout << "Range for " << str << std::endl;
-		std::cout << "Min: " << std::endl;
+		std::cout << "Min: (enter -2147483648 for infinite)" << std::endl;
 		std::cin >> val;
 		fooInputStart.push_back(val);
-		std::cout << "Max: " << std::endl;
+		std::cout << "Max: (enter  2147483647 for infinite)" << std::endl;
 		std::cin >> val;
 		fooInputEnd.push_back(val);
 		temp.push_back(val);
 	}
-	int index = 0;
-	for (int i = -10; i <= 10; i++)
+	// foo's paramter number: 0
+	if (fooInputStart.size() == 0)
 	{
 		temp.clear();
-		temp.push_back(i);
-		std::cout<<(functions["foo"]->Simulate(temp)).getValue()<<std::endl;
+		Variable ret = functions["foo"]->Simulate(temp);
+		possibleResults.push_back(ret.getValue());
 	}
+	// 1 parameter
+	else if (fooInputStart.size() == 1)
+	{
+		// if range bound is 1000, then we simulate 1000 times
+		if (fooInputEnd[0] - fooInputStart[0] <= 1000)
+		{
+			for (i = 0; i <= fooInputEnd[0] - fooInputStart[0]; i++)
+			{
+				temp.clear();
+				temp.push_back(fooInputStart[0] + i);
+				Variable ret = functions["foo"]->Simulate(temp);
+				possibleResults.push_back(ret.getValue());
+			}
+		}
+		else
+		{
+			for (i = 0; i <= 1000; i++)
+			{
+				temp.clear();
+				temp.push_back(fooInputStart[0] + (float(i) / 1000) * (fooInputEnd[0] - fooInputStart[0]) );
+#ifdef DEBUG
+				printf("[%4d]Input:%f, ", i, temp[0]);
+#endif
+				Variable ret = functions["foo"]->Simulate(temp);
+#ifdef DEBUG
+				printf("Get: %f\n", ret.getValue());
+#endif
+				possibleResults.push_back(ret.getValue());
+			}
+		}
+	}
+	// 2 parameter , two for nested loops
+	else if (fooInputStart.size() == 2)
+	{
+		if (fooInputEnd[0] - fooInputStart[0] <= 100)
+		{
+			for (i = 0; i <= fooInputEnd[0] - fooInputStart[0]; i++)
+			{
+				temp.clear();
+				temp.push_back(fooInputStart[0] + i);
+				if (fooInputEnd[1] - fooInputStart[1] <= 100)
+				{
+					for (j = 0; j <= fooInputEnd[1] - fooInputStart[1]; j++)
+					{
+						std::vector<float> temp_j = temp;
+						temp_j.push_back(fooInputStart[1] + j);
+#ifdef DEBUG
+						printf("[%4d,%4d]:Input:ги%f, %f)", i, j,temp_j[0],temp_j[1]);
+#endif
+						Variable ret = functions["foo"]->Simulate(temp_j);
+#ifdef DEBUG
+						printf(", Get:%f\n", ret.getValue());
+#endif
+						possibleResults.push_back(ret.getValue());
+					}
+				}
+				else
+				{
+					for (j = 0; j <= 100; j++)
+					{
+						std::vector<float> temp_j = temp;
+						temp_j.push_back(fooInputStart[1] + (float(j) / 100) * (fooInputEnd[1] - fooInputStart[1]));
+						Variable ret = functions["foo"]->Simulate(temp_j);
+						possibleResults.push_back(ret.getValue());
+					}
+				}
+			}
+		}
+		else
+		{
+			for (i = 0; i <= 100; i++)
+			{
+				temp.clear();
+				temp.push_back(fooInputStart[0] + (float(i) / 100) * (fooInputEnd[0] - fooInputStart[0]));
+				if (fooInputEnd[1] - fooInputStart[1] <= 100)
+				{
+					for (j = 0; j <= fooInputEnd[1] - fooInputStart[1]; j++)
+					{
+						temp.push_back(fooInputStart[1] + j);
+						Variable ret = functions["foo"]->Simulate(temp);
+						possibleResults.push_back(ret.getValue());
+					}
+				}
+				else
+				{
+					for (j = 0; j <= 100; j++)
+					{
+						temp.push_back(fooInputStart[1] + (float(j) / 100) * (fooInputEnd[1] - fooInputStart[1]));
+						Variable ret = functions["foo"]->Simulate(temp);
+						possibleResults.push_back(ret.getValue());
+					}
+				}
+			}
+		}
+	}
+	float max = *std::max_element(possibleResults.begin(),possibleResults.end());
+	float min = *std::min_element(possibleResults.begin(), possibleResults.end());
+	std::cout << "[";
+	if (min <= INT_MIN)
+	{
+		std::cout << "-inf";
+	}
+	else
+	{
+		std::cout << min;
+	}
+	std::cout << ", ";
+	if (max >= INT_MAX)
+	{
+		std::cout << "+inf";
+	}
+	else
+	{
+		std::cout << max;
+	}
+	std::cout<<"]" << std::endl;
 }
 
 VarNode::VarNode(Variable *V)
